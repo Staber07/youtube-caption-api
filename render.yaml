@@ -6,3 +6,7 @@ services:
     region: oregon
     dockerfilePath: ./Dockerfile
     autoDeploy: true
+
+    envVars:
+      - key: PORT
+        value: 8000
