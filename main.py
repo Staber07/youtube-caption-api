@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, validator
 from youtube_transcript_api import YouTubeTranscriptApi
 import uvicorn
 import re
@@ -16,10 +16,9 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS configuration for Zapier and other cross-origin requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for Zapier integration
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,10 +27,8 @@ app.add_middleware(
 class VideoRequest(BaseModel):
     video_id: str
 
-    @field_validator('video_id')
-    @classmethod
+    @validator('video_id')
     def validate_video_id(cls, v):
-        # Clean the video_id if it's a full YouTube URL
         if 'youtube.com/watch?v=' in v:
             match = re.search(r'v=([a-zA-Z0-9_-]+)', v)
             if match:
@@ -41,10 +38,8 @@ class VideoRequest(BaseModel):
             if match:
                 v = match.group(1)
 
-        # Validate YouTube video ID format
         if not re.match(r'^[a-zA-Z0-9_-]{11}$', v):
             raise ValueError('Invalid YouTube video ID format')
-
         return v
 
 class CaptionResponse(BaseModel):
@@ -56,7 +51,7 @@ class CaptionResponse(BaseModel):
 class ErrorResponse(BaseModel):
     error: str
     error_code: str
-    video_id: str | None = None
+    video_id: str = None
 
 @app.get("/", summary="Health Check")
 async def health_check():
@@ -75,10 +70,7 @@ async def health_check():
 async def health():
     return {"status": "ok", "service": "youtube-caption-extractor"}
 
-@app.post("/get-captions", 
-          response_model=CaptionResponse,
-          summary="Extract YouTube Video Captions",
-          description="Extract captions/transcripts from a YouTube video by video ID")
+@app.post("/get-captions", response_model=CaptionResponse)
 async def get_captions(req: VideoRequest):
     try:
         logger.info(f"Processing request for video ID: {req.video_id}")
@@ -151,7 +143,7 @@ async def get_captions(req: VideoRequest):
             }
         )
 
-@app.get("/video/{video_id}/captions", summary="Get Captions by URL Parameter")
+@app.get("/video/{video_id}/captions")
 async def get_captions_by_url(video_id: str):
     request = VideoRequest(video_id=video_id)
     return await get_captions(request)
@@ -159,9 +151,4 @@ async def get_captions_by_url(video_id: str):
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
-    uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=port,
-        log_level="info"
-    )
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
