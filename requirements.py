@@ -1,0 +1,4 @@
+fastapi
+uvicorn[standard]
+pydantic==1.10.13
+youtube-transcript-api
