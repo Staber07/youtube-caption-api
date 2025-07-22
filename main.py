@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
-from youtube_transcript_api._api import YouTubeTranscriptApi
+from youtube_transcript_api import YouTubeTranscriptApi
 import uvicorn
 import re
 import logging
@@ -60,7 +60,6 @@ class ErrorResponse(BaseModel):
 
 @app.get("/", summary="Health Check")
 async def health_check():
-    """Health check endpoint for monitoring and Zapier verification"""
     return {
         "status": "healthy",
         "service": "YouTube Caption Extractor",
@@ -74,7 +73,6 @@ async def health_check():
 
 @app.get("/health", summary="Alternative Health Check")
 async def health():
-    """Alternative health check endpoint"""
     return {"status": "ok", "service": "youtube-caption-extractor"}
 
 @app.post("/get-captions", 
@@ -82,35 +80,12 @@ async def health():
           summary="Extract YouTube Video Captions",
           description="Extract captions/transcripts from a YouTube video by video ID")
 async def get_captions(req: VideoRequest):
-    """
-    Extract captions from a YouTube video.
-
-    - **video_id**: YouTube video ID (11 characters) or full YouTube URL
-
-    Returns the concatenated transcript text with metadata.
-    """
     try:
         logger.info(f"Processing request for video ID: {req.video_id}")
 
-        # Use the new API structure
         try:
-            # Create API instance
-            api = YouTubeTranscriptApi()
-
-            # Try to fetch transcript directly (this will get the best available)
-            fetched_transcript = api.fetch(req.video_id)
-
-            # Extract data from the FetchedTranscript object
-            transcript = []
-            for snippet in fetched_transcript.snippets:
-                transcript.append({
-                    "text": snippet.text,
-                    "start": snippet.start,
-                    "duration": snippet.duration
-                })
-
-            language = fetched_transcript.language_code
-            logger.info(f"Successfully fetched transcript in language: {language}")
+            transcript = YouTubeTranscriptApi.get_transcript(req.video_id)
+            language = transcript[0].get("language", "en") if transcript else "en"
 
         except Exception as e:
             logger.error(f"No transcripts available for video {req.video_id}: {str(e)}")
@@ -123,22 +98,16 @@ async def get_captions(req: VideoRequest):
                 }
             )
 
-        # Extract text and calculate total duration
         text_segments = []
         total_duration = 0.0
 
         for segment in transcript:
             text_segments.append(segment["text"])
-            # Calculate total duration from the last segment
-            if "start" in segment and "duration" in segment:
-                segment_end = segment["start"] + segment["duration"]
-                if segment_end > total_duration:
-                    total_duration = segment_end
+            segment_end = segment.get("start", 0.0) + segment.get("duration", 0.0)
+            if segment_end > total_duration:
+                total_duration = segment_end
 
-        # Join all text segments
         captions_text = " ".join(text_segments)
-
-        # Clean up the text (remove excessive whitespace, newlines)
         captions_text = re.sub(r'\s+', ' ', captions_text).strip()
 
         logger.info(f"Successfully extracted captions for video {req.video_id}, length: {len(captions_text)} characters")
@@ -151,12 +120,10 @@ async def get_captions(req: VideoRequest):
         )
 
     except HTTPException:
-        # Re-raise HTTP exceptions as they are already properly formatted
         raise
     except Exception as e:
         logger.error(f"Error processing video {req.video_id}: {str(e)}")
 
-        # Determine specific error type
         error_message = str(e).lower()
         if "video unavailable" in error_message or "video does not exist" in error_message:
             error_code = "VIDEO_NOT_FOUND"
@@ -186,16 +153,12 @@ async def get_captions(req: VideoRequest):
 
 @app.get("/video/{video_id}/captions", summary="Get Captions by URL Parameter")
 async def get_captions_by_url(video_id: str):
-    """
-    Alternative endpoint to get captions using URL parameter instead of POST body.
-    Useful for simple GET requests from Zapier or other automation tools.
-    """
     request = VideoRequest(video_id=video_id)
     return await get_captions(request)
 
 if __name__ == "__main__":
     import os
-    port = int(os.environ.get("PORT", 5000))  # Replit uses port 5000
+    port = int(os.environ.get("PORT", 5000))
     uvicorn.run(
         app, 
         host="0.0.0.0", 
